@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="squircle-clip">
+      <rect x="24" y="24" width="976" height="976" rx="220" />
+    </clipPath>
+
+    <linearGradient id="cyan-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f5ff"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+
+    <linearGradient id="cyan-bright" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <linearGradient id="horn-titanium" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#cbd5e1"/>
+      <stop offset="40%" stop-color="#94a3b8"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+
+    <linearGradient id="horn-dark" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="60%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#070a12"/>
+    </linearGradient>
+
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#000000" flood-opacity="0.22" />
+    </filter>
+  </defs>
+
+  <!-- Luxury White Squircle Container -->
+  <rect x="24" y="24" width="976" height="976" rx="220" fill="#ffffff" stroke="#e2e8f0" stroke-width="6" />
+
+  <g clip-path="url(#squircle-clip)">
+    <g transform="translate(512, 512)" filter="url(#subtle-shadow)">
+
+      <!-- Hexagonal Architectural Gateway -->
+      <polygon points="
+        0,-390
+        338,-195
+        338,195
+        0,390
+        -338,195
+        -338,-195
+      " fill="none" stroke="#0f172a" stroke-width="40" stroke-linejoin="round" />
+
+      <polygon points="
+        0,-355
+        307,-177
+        307,177
+        0,355
+        -307,177
+        -307,-177
+      " fill="none" stroke="#00f5ff" stroke-width="4" opacity="0.45" stroke-dasharray="16, 12" />
+
+      <!-- Gateway Nodes -->
+      <circle cx="0" cy="-390" r="10" fill="#00f5ff" />
+      <circle cx="338" cy="-195" r="10" fill="#00f5ff" />
+      <circle cx="338" cy="195" r="10" fill="#00f5ff" />
+      <circle cx="0" cy="390" r="10" fill="#00f5ff" />
+      <circle cx="-338" cy="195" r="10" fill="#00f5ff" />
+      <circle cx="-338" cy="-195" r="10" fill="#00f5ff" />
+
+      <!-- ======================================================== -->
+      <!-- MASCOT: THE FORGED ANVIL RHINOCEROS                      -->
+      <!-- ======================================================== -->
+
+      <!-- 1. Watertight Solid Base Silhouette -->
+      <path d="
+        M 0 -220
+        L 90 -190
+        L 170 -230
+        L 220 -220
+        L 200 -140
+        L 260 -40
+        L 270 70
+        L 230 180
+        L 150 250
+        L 70 270
+        L 0 250
+        L -70 270
+        L -150 250
+        L -230 180
+        L -270 70
+        L -260 -40
+        L -200 -140
+        L -220 -220
+        L -170 -230
+        L -90 -190
+        Z
+      " fill="#0b0f19" stroke="#0f172a" stroke-width="12" stroke-linejoin="round" />
+
+      <!-- 2. Crest & Shoulder Plates -->
+      <polygon points="0,-220 90,-190 150,-150 0,-170" fill="#1e293b" />
+      <polygon points="0,-220 -90,-190 -150,-150 0,-170" fill="#334155" />
+
+      <polygon points="90,-190 170,-230 180,-160 150,-150" fill="#0f172a" />
+      <polygon points="-90,-190 -170,-230 -180,-160 -150,-150" fill="#1e293b" />
+
+      <!-- Armored Ears -->
+      <polygon points="170,-230 220,-220 200,-140 180,-160" fill="#1e293b" stroke="#00f5ff" stroke-width="1.5" />
+      <polygon points="178,-210 210,-205 195,-155" fill="url(#cyan-glow)" opacity="0.85" />
+
+      <polygon points="-170,-230 -220,-220 -200,-140 -180,-160" fill="#334155" stroke="#00f5ff" stroke-width="1.5" />
+      <polygon points="-178,-210 -210,-205 -195,-155" fill="url(#cyan-glow)" opacity="0.85" />
+
+      <!-- 3. Upper Temples & Forehead Shield -->
+      <polygon points="0,-170 150,-150 120,-80 0,-100" fill="#1e293b" />
+      <polygon points="0,-170 -150,-150 -120,-80 0,-100" fill="#334155" />
+
+      <polygon points="150,-150 200,-140 260,-40 190,-10 120,-80" fill="#0f172a" />
+      <polygon points="-150,-150 -200,-140 -260,-40 -190,-10 -120,-80" fill="#1e293b" />
+
+      <!-- Secondary Forehead Horn (Sturdy Spire) -->
+      <polygon points="0,-145 35,-65 0,-45" fill="#475569" />
+      <polygon points="0,-145 -35,-65 0,-45" fill="#64748b" />
+      <line x1="0" y1="-145" x2="0" y2="-45" stroke="#00f5ff" stroke-width="3" />
+
+      <!-- 4. Mid-Face & Brow Facets -->
+      <polygon points="0,-100 120,-80 80,-10 0,-20" fill="#1e293b" />
+      <polygon points="0,-100 -120,-80 -80,-10 0,-20" fill="#334155" />
+
+      <polygon points="120,-80 190,-10 140,40 80,-10" fill="#334155" />
+      <polygon points="-120,-80 -190,-10 -140,40 -80,-10" fill="#475569" />
+
+      <!-- 5. Electric Predatory Cyan Eyes (High Contrast & Piercing) -->
+      <!-- Left Eye -->
+      <polygon points="-140,-12 -80,-28 -108,-44" fill="#04060d" stroke="#00f5ff" stroke-width="2.5" />
+      <polygon points="-135,-15 -86,-27 -108,-39" fill="url(#cyan-bright)" />
+      <circle cx="-106" cy="-25" r="4.5" fill="#ffffff" />
+      <polygon points="-146,-9 -75,-26 -65,-36 -115,-18" fill="#0b0f19" />
+
+      <!-- Right Eye -->
+      <polygon points="140,-12 80,-28 108,-44" fill="#04060d" stroke="#00f5ff" stroke-width="2.5" />
+      <polygon points="135,-15 86,-27 108,-39" fill="url(#cyan-bright)" />
+      <circle cx="106" cy="-25" r="4.5" fill="#ffffff" />
+      <polygon points="146,-9 75,-26 65,-36 115,-18" fill="#0b0f19" />
+
+      <!-- 6. Heavy Flared Cheeks & Jaw Plates -->
+      <polygon points="190,-10 260,-40 270,70 190,80 140,40" fill="#1e293b" />
+      <polygon points="-190,-10 -260,-40 -270,70 -190,80 -140,40" fill="#334155" />
+
+      <polygon points="190,80 270,70 230,180 160,170" fill="#0f172a" />
+      <polygon points="-190,80 -270,70 -230,180 -160,170" fill="#1e293b" />
+
+      <polygon points="140,40 190,80 160,170 100,120" fill="#334155" />
+      <polygon points="-140,40 -190,80 -160,170 -100,120" fill="#475569" />
+
+      <!-- 7. Lower Anvil Chin / Bevel Block -->
+      <polygon points="0,250 70,270 150,250 110,180 0,205" fill="#1e293b" />
+      <polygon points="0,250 -70,270 -150,250 -110,180 0,205" fill="#334155" />
+
+      <polygon points="0,205 110,180 80,120 0,145" fill="#334155" />
+      <polygon points="0,205 -110,180 -80,120 0,145" fill="#475569" />
+
+      <!-- 8. PRIMARY FORGED NASAL ANVIL HORN (Magnificent Diamond Bevel) -->
+      <!-- Left Bevel (Light Titanium) -->
+      <polygon points="
+        0,-290
+        -50,20
+        -60,95
+        0,110
+      " fill="url(#horn-titanium)" stroke="#00f5ff" stroke-width="2.5" />
+      <polygon points="0,-290 0,110 -25,-85" fill="#94a3b8" opacity="0.4" />
+
+      <!-- Right Bevel (Dark Obsidian) -->
+      <polygon points="
+        0,-290
+        50,20
+        60,95
+        0,110
+      " fill="url(#horn-dark)" stroke="#00f5ff" stroke-width="2.5" />
+      <polygon points="0,-290 0,110 25,-85" fill="#0b0f19" opacity="0.5" />
+
+      <!-- Central Cutting Ridge -->
+      <line x1="0" y1="-290" x2="0" y2="110" stroke="#00f5ff" stroke-width="4.5" stroke-linecap="round" />
+
+      <!-- High-Frequency Calibration Laser Bands -->
+      <path d="M -44 40 Q 0 28 44 40" fill="none" stroke="#00f5ff" stroke-width="3" opacity="0.9" />
+      <path d="M -34 -35 Q 0 -48 34 -35" fill="none" stroke="#00f5ff" stroke-width="2.8" opacity="0.95" />
+      <path d="M -22 -115 Q 0 -126 22 -115" fill="none" stroke="#00f5ff" stroke-width="2.5" opacity="0.95" />
+      <path d="M -12 -195 Q 0 -205 12 -195" fill="none" stroke="#00f5ff" stroke-width="2" opacity="1.0" />
+
+      <!-- Horn Apex Spark Diamond -->
+      <polygon points="0,-306 7,-290 0,-274 -7,-290" fill="#ffffff" />
+      <circle cx="0" cy="-290" r="4.5" fill="#00f5ff" />
+
+      <!-- 9. Snout Nostril Plates (Broad Rhino Anvil Nose) -->
+      <polygon points="0,110 60,95 80,120 45,150 0,145" fill="#1e293b" />
+      <polygon points="0,110 -60,95 -80,120 -45,150 0,145" fill="#334155" />
+
+      <!-- Nostril Recesses -->
+      <polygon points="18,125 40,120 30,138" fill="#050811" />
+      <polygon points="-18,125 -40,120 -30,138" fill="#050811" />
+
+    </g>
+  </g>
+</svg>

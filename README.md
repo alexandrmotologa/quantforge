@@ -1,6 +1,41 @@
-# QuantForge
+<p align="center">
+  <img src="docs/images/logo.png?raw=true" alt="QuantForge Logo" width="130" style="border-radius: 24px;" />
+</p>
+
+<h1 align="center">QuantForge</h1>
+
+<p align="center">
+  <strong>Automated GGUF quantization, imatrix calibration, and perplexity evaluation lab for local LLMs</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/alexandrmotologa/quantforge/actions"><img src="https://img.shields.io/badge/tests-84%20passed-brightgreen.svg" alt="Tests"></a>
+  <a href="https://github.com/alexandrmotologa/quantforge/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/alexandrmotologa/quantforge"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python"></a>
+  <a href="https://github.com/alexandrmotologa/quantforge"><img src="https://img.shields.io/badge/backend-llama.cpp-orange.svg" alt="llama.cpp"></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/quantforge_demo.gif?raw=true" alt="QuantForge Interface Demo" width="90%" style="border-radius: 12px; border: 1px solid #1e293b;" />
+</p>
 
 QuantForge is an automated GGUF quantization, imatrix calibration, and perplexity evaluation lab for local LLMs. It acts as an optimization companion to InferOps and llama.cpp, turning unquantized models or FP16 checkpoints into benchmarked quantization sets with measured quality-loss metrics.
+
+## Visual Interface & Studio
+
+QuantForge provides both a scriptable Typer CLI and an interactive web dashboard for monitoring jobs, configuring pipelines, and evaluating Pareto frontiers.
+
+| Studio & Job Launcher | Pipeline Automation Stepper |
+|---|---|
+| ![QuantForge Studio](docs/images/quantforge_studio.png?raw=true) | ![Pipeline Stepper](docs/images/quantforge_pipelines.png?raw=true) |
+
+| Model Library & Tensor Breakdown | Pareto Evaluation & Quality Lab |
+|---|---|
+| ![Model Library](docs/images/quantforge_models.png?raw=true) | ![Pareto Evaluation](docs/images/quantforge_eval.png?raw=true) |
+
+| Operations Dashboard & System Metrics |
+|---|
+| ![Dashboard Overview](docs/images/quantforge_dashboard.png?raw=true) |
 
 ## Key Capabilities
 
