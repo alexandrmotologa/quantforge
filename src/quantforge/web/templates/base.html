@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QuantForge Lab{% endblock %}</title>
+    <!-- Modern Tailwind Play CDN for crisp clean developer UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        },
+                        darkbg: '#090d16',
+                        cardbg: '#111827',
+                        bordercolor: '#1f2937'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #f3f4f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .code-font {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <!-- Navbar -->
+    <header class="border-b border-bordercolor bg-cardbg/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <a href="/" class="flex items-center space-x-2">
+                    <span class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center font-bold text-emerald-400">QF</span>
+                    <span class="text-xl font-bold tracking-tight text-white">QuantForge <span class="text-xs font-mono uppercase bg-emerald-950 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded ml-1.5">Lab</span></span>
+                </a>
+            </div>
+            <nav class="flex items-center space-x-1 sm:space-x-4 text-sm font-medium">
+                <a href="/" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Dashboard</a>
+                <a href="/studio" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/studio' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Quant Studio</a>
+                <a href="/eval" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/eval' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Pareto Lab</a>
+            </nav>
+            <div class="flex items-center space-x-3 text-xs text-slate-400">
+                <span class="hidden sm:inline-block">v{{ version }}</span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-bordercolor py-6 text-center text-xs text-slate-500">
+        QuantForge &bull; Model optimization companion to InferOps and llama.cpp &bull; MIT License
+    </footer>
+</body>
+</html>

@@ -1,0 +1,23 @@
+name: "production-7b-matrix"
+description: "Standard production quantization set with balanced daily driver, compact, and reference quants."
+input_model: "./models/base-model-f16.gguf"
+output_dir: "./dist/production-7b"
+
+calibration:
+  ctx_size: 2048
+  chunks: 64
+  n_gpu_layers: 0
+
+quants:
+  - "Q4_K_M"
+  - "Q5_K_M"
+  - "IQ3_M"
+  - "Q8_0"
+
+evaluation:
+  dataset: "./data/eval_wikitext.raw"
+  ctx_size: 2048
+  eval_baseline: true
+  calc_pareto: true
+
+export_model_card: true

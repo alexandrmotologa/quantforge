@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Pareto Lab & Perplexity - QuantForge{% endblock %}
+
+{% block content %}
+<div class="space-y-8 max-w-6xl mx-auto">
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">Pareto Quality Lab</h1>
+        <p class="text-sm text-slate-400 mt-1">Multi-quant trade-off analysis comparing model size (GB) against perplexity degradation.</p>
+    </div>
+
+    <!-- Interactive Pareto Chart Card -->
+    <div class="border border-bordercolor rounded-xl bg-cardbg p-6 space-y-4">
+        <div class="flex items-center justify-between">
+            <h2 class="text-base font-semibold text-white">Pareto Frontier: Size vs. Perplexity</h2>
+            <div class="flex items-center space-x-4 text-xs">
+                <span class="flex items-center gap-1.5 text-emerald-400"><span class="w-3 h-3 rounded-full bg-emerald-500"></span> Pareto Optimal</span>
+                <span class="flex items-center gap-1.5 text-slate-400"><span class="w-3 h-3 rounded-full bg-slate-600"></span> Dominated</span>
+            </div>
+        </div>
+
+        <div class="relative w-full h-80 bg-slate-950 rounded-lg border border-bordercolor flex items-center justify-center p-4 overflow-hidden">
+            <canvas id="pareto-canvas" class="w-full h-full"></canvas>
+        </div>
+        <p class="text-xs text-slate-500 text-center">Lower size and lower perplexity (bottom-left) represent ideal compression efficiency.</p>
+    </div>
+
+    <!-- Quantization Points Table -->
+    <div class="border border-bordercolor rounded-xl bg-cardbg overflow-hidden">
+        <div class="px-6 py-4 border-b border-bordercolor flex items-center justify-between">
+            <h2 class="text-base font-semibold text-white">Benchmark Analysis Matrix</h2>
+            <button onclick="loadSampleData()" class="text-xs text-emerald-400 hover:underline">Load Sample 7B Benchmark</button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-900/60 text-xs font-mono uppercase text-slate-400 border-b border-bordercolor">
+                    <tr>
+                        <th class="px-6 py-3">Quant Type</th>
+                        <th class="px-6 py-3">Size (GB)</th>
+                        <th class="px-6 py-3">Perplexity</th>
+                        <th class="px-6 py-3">Delta PPL</th>
+                        <th class="px-6 py-3">Pareto Status</th>
+                        <th class="px-6 py-3">Recommendation</th>
+                    </tr>
+                </thead>
+                <tbody id="pareto-table-body" class="divide-y divide-bordercolor">
+                    <!-- Populated dynamically via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let samplePoints = [
+    { quant_type: "F16", file_size_gb: 14.48, perplexity: 5.120, is_baseline: true },
+    { quant_type: "Q8_0", file_size_gb: 7.70, perplexity: 5.124 },
+    { quant_type: "Q6_K", file_size_gb: 5.94, perplexity: 5.138 },
+    { quant_type: "Q5_K_M", file_size_gb: 4.98, perplexity: 5.182 },
+    { quant_type: "Q4_K_M", file_size_gb: 4.07, perplexity: 5.250 },
+    { quant_type: "IQ4_XS", file_size_gb: 3.84, perplexity: 5.280 },
+    { quant_type: "Q4_0", file_size_gb: 3.80, perplexity: 5.420 },
+    { quant_type: "IQ3_M", file_size_gb: 3.35, perplexity: 5.390 },
+    { quant_type: "Q3_K_M", file_size_gb: 3.16, perplexity: 5.680 },
+    { quant_type: "IQ2_M", file_size_gb: 2.45, perplexity: 6.120 },
+    { quant_type: "Q2_K", file_size_gb: 2.32, perplexity: 7.450 },
+];
+
+async function updateAnalysis(points) {
+    const res = await fetch('/api/eval/pareto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ points: points, baseline_quant: "F16" })
+    });
+    const data = await res.json();
+    renderTable(data.points);
+    drawChart(data.points);
+}
+
+function renderTable(points) {
+    const tbody = document.getElementById('pareto-table-body');
+    tbody.innerHTML = '';
+    points.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/40 transition';
+        const delta = p.delta_ppl !== null ? (p.delta_ppl > 0 ? '+' + p.delta_ppl.toFixed(4) : p.delta_ppl.toFixed(4)) : '-';
+        const badge = p.is_pareto_optimal
+            ? '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800">Frontier</span>'
+            : '<span class="text-xs text-slate-500">Sub-optimal</span>';
+        const rec = p.recommendation
+            ? `<span class="text-xs font-medium text-emerald-300">${p.recommendation}</span>`
+            : '-';
+
+        tr.innerHTML = `
+            <td class="px-6 py-4 font-mono font-bold text-white text-xs">${p.quant_type}</td>
+            <td class="px-6 py-4 font-mono text-xs">${p.file_size_gb.toFixed(2)}</td>
+            <td class="px-6 py-4 font-mono text-xs text-cyan-300">${p.perplexity.toFixed(4)}</td>
+            <td class="px-6 py-4 font-mono text-xs ${p.delta_ppl > 0.3 ? 'text-amber-400' : 'text-slate-300'}">${delta}</td>
+            <td class="px-6 py-4">${badge}</td>
+            <td class="px-6 py-4">${rec}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function drawChart(points) {
+    const canvas = document.getElementById('pareto-canvas');
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+    const w = rect.width;
+    const h = rect.height;
+    ctx.clearRect(0, 0, w, h);
+
+    if (!points || points.length === 0) return;
+
+    const pad = 50;
+    const sizes = points.map(p => p.file_size_gb);
+    const ppls = points.map(p => p.perplexity);
+
+    const minX = Math.min(...sizes) * 0.9;
+    const maxX = Math.max(...sizes) * 1.05;
+    const minY = Math.min(...ppls) * 0.98;
+    const maxY = Math.max(...ppls) * 1.05;
+
+    const toX = val => pad + ((val - minX) / (maxX - minX)) * (w - pad * 2);
+    const toY = val => (h - pad) - ((val - minY) / (maxY - minY)) * (h - pad * 2);
+
+    // Axes
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad, pad);
+    ctx.lineTo(pad, h - pad);
+    ctx.lineTo(w - pad, h - pad);
+    ctx.stroke();
+
+    // Axis labels
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '10px monospace';
+    ctx.fillText('Model Size (GB) →', w / 2 - 40, h - 15);
+    ctx.save();
+    ctx.translate(15, h / 2 + 30);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Perplexity (Lower is better) →', 0, 0);
+    ctx.restore();
+
+    // Connect Pareto frontier points
+    const frontier = points.filter(p => p.is_pareto_optimal).sort((a,b) => a.file_size_gb - b.file_size_gb);
+    if (frontier.length > 1) {
+        ctx.strokeStyle = '#10b981';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(toX(frontier[0].file_size_gb), toY(frontier[0].perplexity));
+        for (let i = 1; i < frontier.length; i++) {
+            ctx.lineTo(toX(frontier[i].file_size_gb), toY(frontier[i].perplexity));
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // Draw Points
+    points.forEach(p => {
+        const x = toX(p.file_size_gb);
+        const y = toY(p.perplexity);
+
+        ctx.fillStyle = p.is_pareto_optimal ? '#10b981' : '#64748b';
+        ctx.beginPath();
+        ctx.arc(x, y, p.is_pareto_optimal ? 6 : 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Label
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '10px monospace';
+        ctx.fillText(p.quant_type, x + 8, y + 3);
+    });
+}
+
+function loadSampleData() {
+    updateAnalysis(samplePoints);
+}
+
+window.addEventListener('load', () => {
+    loadSampleData();
+});
+</script>
+{% endblock %}

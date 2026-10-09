@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}Quantization Studio - QuantForge{% endblock %}
+
+{% block content %}
+<div class="space-y-8 max-w-5xl mx-auto">
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">Quantization Studio</h1>
+        <p class="text-sm text-slate-400 mt-1">Configure and execute high-precision GGUF quantizations with importance matrix calibration.</p>
+    </div>
+
+    <!-- Step 1: Model Inspector Card -->
+    <div class="border border-bordercolor rounded-xl bg-cardbg p-6">
+        <h2 class="text-base font-semibold text-white mb-4">1. Source GGUF Model</h2>
+        <div class="flex flex-col sm:flex-row gap-3">
+            <input type="text" id="model-path" placeholder="/path/to/base-model-f16.gguf" class="flex-1 bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+            <button onclick="inspectModel()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-bordercolor text-sm font-medium rounded-lg transition whitespace-nowrap">
+                Inspect Header
+            </button>
+        </div>
+        <div id="model-meta-box" class="mt-4 p-4 rounded-lg bg-slate-900/60 border border-bordercolor hidden">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                <div>
+                    <span class="text-slate-500 block uppercase font-mono">Architecture</span>
+                    <span id="meta-arch" class="font-bold text-white text-sm">-</span>
+                </div>
+                <div>
+                    <span class="text-slate-500 block uppercase font-mono">Parameters</span>
+                    <span id="meta-params" class="font-bold text-white text-sm">-</span>
+                </div>
+                <div>
+                    <span class="text-slate-500 block uppercase font-mono">Context Length</span>
+                    <span id="meta-ctx" class="font-bold text-white text-sm">-</span>
+                </div>
+                <div>
+                    <span class="text-slate-500 block uppercase font-mono">Source Size</span>
+                    <span id="meta-size" class="font-bold text-white text-sm">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Target Configuration -->
+    <div class="border border-bordercolor rounded-xl bg-cardbg p-6 space-y-6">
+        <h2 class="text-base font-semibold text-white">2. Quantization Parameters</h2>
+
+        <div>
+            <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Target Quantization Format</label>
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                {% for q in ["Q4_K_M", "Q5_K_M", "IQ3_M", "Q6_K", "Q8_0", "IQ4_XS", "IQ2_M", "Q4_0", "Q3_K_M", "IQ1_M", "F16", "Q5_0"] %}
+                <button type="button" onclick="selectQuant('{{ q }}')" id="quant-btn-{{ q }}" class="quant-chip px-3 py-2 text-xs font-mono font-medium rounded-lg border border-bordercolor bg-slate-900 text-slate-300 hover:border-emerald-500 transition text-center {% if q == 'Q4_K_M' %}border-emerald-500 bg-emerald-950/40 text-emerald-400{% endif %}">
+                    {{ q }}
+                </button>
+                {% endfor %}
+            </div>
+            <input type="hidden" id="selected-quant" value="Q4_K_M">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Output Destination Path</label>
+                <input type="text" id="output-path" placeholder="/path/to/output-q4km.gguf" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+            </div>
+            <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Importance Matrix (.dat) (Optional)</label>
+                <input type="text" id="imatrix-path" placeholder="/path/to/calibration.dat" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+            </div>
+        </div>
+
+        <div class="flex items-center gap-6 pt-2">
+            <label class="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
+                <input type="checkbox" id="leave-output-tensor" class="rounded border-bordercolor text-emerald-500 focus:ring-0 bg-slate-900">
+                <span>Leave output tensor in FP32/FP16 (Recommended)</span>
+            </label>
+            <label class="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
+                <input type="checkbox" id="pure" class="rounded border-bordercolor text-emerald-500 focus:ring-0 bg-slate-900">
+                <span>Pure Quant (all tensors)</span>
+            </label>
+        </div>
+
+        <div class="pt-4 border-t border-bordercolor flex justify-end">
+            <button onclick="launchQuantization()" id="start-btn" class="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-semibold rounded-lg transition shadow">
+                Start Quantization Job
+            </button>
+        </div>
+    </div>
+
+    <!-- Live Execution Modal / Panel -->
+    <div id="live-panel" class="border border-bordercolor rounded-xl bg-cardbg p-6 space-y-4 hidden">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                <h3 class="text-base font-semibold text-white">Active Quantization Job: <span id="active-job-id" class="font-mono text-emerald-400 text-sm"></span></h3>
+            </div>
+            <span id="active-job-pct" class="text-sm font-mono font-bold text-white">0%</span>
+        </div>
+
+        <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-bordercolor">
+            <div id="active-job-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <div class="p-4 rounded-lg bg-black/60 border border-bordercolor code-font text-xs text-slate-300 h-64 overflow-y-auto space-y-1" id="terminal-feed">
+            <div class="text-slate-500">Initializing subprocess stream...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function selectQuant(q) {
+    document.getElementById('selected-quant').value = q;
+    document.querySelectorAll('.quant-chip').forEach(btn => {
+        btn.classList.remove('border-emerald-500', 'bg-emerald-950/40', 'text-emerald-400');
+    });
+    const active = document.getElementById('quant-btn-' + q);
+    if (active) {
+        active.classList.add('border-emerald-500', 'bg-emerald-950/40', 'text-emerald-400');
+    }
+}
+
+async function inspectModel() {
+    const p = document.getElementById('model-path').value.trim();
+    if (!p) return alert("Please specify input model path");
+    try {
+        const res = await fetch('/api/models/inspect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_path: p })
+        });
+        const data = await res.json();
+        if (data.detail) return alert("Error: " + data.detail);
+
+        document.getElementById('meta-arch').innerText = data.architecture;
+        document.getElementById('meta-params').innerText = data.parameters ? (data.parameters / 1e9).toFixed(2) + "B" : "N/A";
+        document.getElementById('meta-ctx').innerText = data.context_length || "N/A";
+        document.getElementById('meta-size').innerText = (data.size_bytes / (1024**3)).toFixed(2) + " GB";
+        document.getElementById('model-meta-box').classList.remove('hidden');
+
+        // Suggest output path if empty
+        if (!document.getElementById('output-path').value) {
+            const ext = p.lastIndexOf('.');
+            const base = ext !== -1 ? p.substring(0, ext) : p;
+            document.getElementById('output-path').value = base + '-q4_k_m.gguf';
+        }
+    } catch (e) {
+        alert("Failed to inspect model: " + e);
+    }
+}
+
+async function launchQuantization() {
+    const inPath = document.getElementById('model-path').value.trim();
+    const outPath = document.getElementById('output-path').value.trim();
+    const quant = document.getElementById('selected-quant').value;
+    const imatrix = document.getElementById('imatrix-path').value.trim() || null;
+    const leaveOut = document.getElementById('leave-output-tensor').checked;
+    const pure = document.getElementById('pure').checked;
+
+    if (!inPath || !outPath) return alert("Please provide input and output paths.");
+
+    const btn = document.getElementById('start-btn');
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/jobs/quantize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                input_path: inPath,
+                output_path: outPath,
+                quant_type: quant,
+                imatrix_path: imatrix,
+                leave_output_tensor: leaveOut,
+                pure: pure
+            })
+        });
+        const data = await res.json();
+        if (data.job_id) {
+            startJobStream(data.job_id);
+        }
+    } catch (e) {
+        alert("Error launching job: " + e);
+        btn.disabled = false;
+    }
+}
+
+function startJobStream(jobId) {
+    document.getElementById('live-panel').classList.remove('hidden');
+    document.getElementById('active-job-id').innerText = jobId;
+    const feed = document.getElementById('terminal-feed');
+    feed.innerHTML = '';
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/jobs/${jobId}`);
+
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.percent !== undefined) {
+            document.getElementById('active-job-pct').innerText = Math.round(msg.percent) + '%';
+            document.getElementById('active-job-bar').style.width = msg.percent + '%';
+        }
+        if (msg.raw_line) {
+            const line = document.createElement('div');
+            line.innerText = msg.raw_line;
+            feed.appendChild(line);
+            feed.scrollTop = feed.scrollHeight;
+        }
+    };
+
+    // Polling fallback to check completion
+    const checkInt = setInterval(async () => {
+        const res = await fetch('/api/jobs/' + jobId);
+        const j = await res.json();
+        if (j.status === 'completed' || j.status === 'failed') {
+            clearInterval(checkInt);
+            document.getElementById('start-btn').disabled = false;
+            const endLine = document.createElement('div');
+            endLine.className = j.status === 'completed' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+            endLine.innerText = `Job finished with status: ${j.status.toUpperCase()}`;
+            feed.appendChild(endLine);
+            feed.scrollTop = feed.scrollHeight;
+        }
+    }, 2000);
+}
+</script>
+{% endblock %}
