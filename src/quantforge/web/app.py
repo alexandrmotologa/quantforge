@@ -387,3 +387,172 @@ async def view_eval(request: Request):
             "version": __version__,
         },
     )
+
+
+@app.get("/pipelines", response_class=HTMLResponse)
+async def view_pipelines(request: Request):
+    """Renders the Pipelines recipe builder interface."""
+    return templates.TemplateResponse(
+        request=request,
+        name="pipelines.html",
+        context={
+            "version": __version__,
+        },
+    )
+
+
+@app.get("/models", response_class=HTMLResponse)
+async def view_models(request: Request):
+    """Renders the Models Library interface scanning local checkpoints."""
+    models_dir = settings.data_dir / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    discovered = []
+
+    # Scan ~/.quantforge/models and cwd for gguf files
+    for search_dir in [models_dir, Path("./models"), Path(".")]:
+        if search_dir.is_dir():
+            for p in search_dir.glob("*.gguf"):
+                try:
+                    reader = GGUFReader(p)
+                    info = reader.read_model_info(load_tensors=False)
+                    discovered.append({
+                        "name": p.stem,
+                        "file_path": str(p),
+                        "architecture": info.architecture,
+                        "size_bytes": info.file_size_bytes,
+                        "tensor_count": info.tensor_count,
+                        "context_length": info.context_length,
+                        "dominant_quant": info.dominant_quant,
+                    })
+                except Exception:
+                    pass
+
+    return templates.TemplateResponse(
+        request=request,
+        name="models.html",
+        context={
+            "models": discovered,
+            "version": __version__,
+        },
+    )
+
+
+# -------------------------------------------------------------------------
+# NEW EXTENDED REST API ENDPOINTS
+# -------------------------------------------------------------------------
+
+class HfPullRequest(BaseModel):
+    repo_id: str
+    filename: Optional[str] = None
+    target_dir: Optional[str] = None
+
+
+class HfPushRequest(BaseModel):
+    repo_id: str
+    source_path: str
+    token: Optional[str] = None
+    commit_message: Optional[str] = None
+    private: bool = False
+
+
+class PipelineRunRequest(BaseModel):
+    input_model: str
+    output_dir: str = "./dist"
+    corpus_preset: str = "general-wiki"
+    quants: List[str] = ["Q4_K_M", "Q5_K_M", "Q8_0"]
+    evaluate: bool = True
+    export_card: bool = True
+
+
+@app.post("/api/hf/pull")
+async def api_hf_pull(req: HfPullRequest):
+    """Pulls model checkpoint from Hugging Face Hub."""
+    from quantforge.formats.hf_hub import HFHubManager
+
+    mgr = HFHubManager()
+    target = Path(req.target_dir) if req.target_dir else None
+    downloaded = mgr.pull_model(repo_id=req.repo_id, filename=req.filename, target_dir=target)
+    return {"status": "success", "file": str(downloaded), "message": f"Downloaded {downloaded.name}"}
+
+
+@app.post("/api/hf/push")
+async def api_hf_push(req: HfPushRequest):
+    """Pushes quantized model files to Hugging Face Hub."""
+    from quantforge.formats.hf_hub import HFHubManager
+
+    mgr = HFHubManager(token=req.token)
+    url = mgr.push_models(repo_id=req.repo_id, source_path=Path(req.source_path), commit_message=req.commit_message, private=req.private)
+    return {"status": "success", "url": url}
+
+
+@app.get("/api/system/autotune")
+async def api_autotune(model_size_gb: Optional[float] = None, context_length: int = 4096):
+    """Returns hardware profile and hyperparameter recommendations."""
+    from quantforge.core.autotune import HardwareAutotuner
+
+    tuner = HardwareAutotuner()
+    return tuner.recommend(model_size_gb=model_size_gb, context_length=context_length)
+
+
+@app.get("/api/datasets/presets")
+async def api_dataset_presets():
+    """Lists calibration dataset presets."""
+    from quantforge.engines.dataset_manager import DatasetManager
+
+    mgr = DatasetManager()
+    return [{"name": p.name, "category": p.category, "description": p.description} for p in mgr.list_presets()]
+
+
+@app.post("/api/pipelines/run")
+async def api_pipeline_run(req: PipelineRunRequest, background_tasks: BackgroundTasks):
+    """Dispatches an automated pipeline recipe in background."""
+    from quantforge.pipelines.runner import PipelineRunner
+    from quantforge.engines.dataset_manager import DatasetManager
+
+    job_id = f"job-pipe-{uuid.uuid4().hex[:8]}"
+    db.create_job(
+        job_id=job_id,
+        job_type="pipeline",
+        input_model=req.input_model,
+        output_model=req.output_dir,
+    )
+
+    async def _runner():
+        runner = PipelineRunner(binary_manager)
+        ds_mgr = DatasetManager()
+        calib_file = ds_mgr.generate_corpus(req.corpus_preset)
+
+        recipe = {
+            "name": f"pipeline-{Path(req.input_model).stem}",
+            "input_model": req.input_model,
+            "output_dir": req.output_dir,
+            "calibration": {
+                "dataset": str(calib_file),
+                "ctx_size": 2048,
+                "chunks": 32,
+            },
+            "quants": req.quants,
+            "evaluation": {
+                "dataset": str(calib_file),
+                "ctx_size": 2048,
+                "calc_pareto": req.evaluate,
+            } if req.evaluate else None,
+            "export_model_card": req.export_card,
+        }
+
+        def _prog(p):
+            db.update_job_progress(
+                job_id=job_id,
+                progress_pct=(p.current_step / p.total_steps) * 100.0,
+                current_step=f"[{p.stage.upper()}] {p.detail}",
+            )
+
+        try:
+            summary = await runner.run_recipe(recipe, on_progress=_prog)
+            status = "completed" if summary.success else "failed"
+            db.finalize_job(job_id=job_id, status=status, return_code=0 if summary.success else 1, error_message=summary.error_message)
+        except Exception as e:
+            db.finalize_job(job_id=job_id, status="failed", return_code=1, error_message=str(e))
+
+    background_tasks.add_task(_runner)
+    return {"job_id": job_id, "status": "queued"}

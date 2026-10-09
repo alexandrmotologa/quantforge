@@ -232,9 +232,14 @@ class PipelineRunner:
 
         current_step += 1
 
-        # Stage 4: Model Card Generation
+        # Stage 4: Model Card Generation & SVG Chart
         if recipe.get("export_model_card", True):
-            _notify("export", "Exporting Model Card...")
+            _notify("export", "Exporting Model Card and Pareto SVG...")
+            if summary.pareto_report and summary.pareto_report.points:
+                from quantforge.formats.pareto_svg import ParetoSvgGenerator
+                svg_gen = ParetoSvgGenerator()
+                svg_gen.save_svg(summary.pareto_report, output_dir / "pareto_frontier.svg")
+
             card_md = self.card_gen.generate_card(
                 model_name=input_model.stem,
                 model_info=model_info,

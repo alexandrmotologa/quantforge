@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Pipeline Lab - QuantForge{% endblock %}
+
+{% block content %}
+<div class="space-y-8 max-w-5xl mx-auto">
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">Automated Pipelines Lab</h1>
+        <p class="text-sm text-slate-400 mt-1">Orchestrate end-to-end quantization recipes: importance calibration, multi-quant generation, perplexity evaluation, and Model Card publication.</p>
+    </div>
+
+    <!-- Preset Selector Chips -->
+    <div class="flex items-center gap-3">
+        <span class="text-xs font-mono uppercase text-slate-400">Recipe Presets:</span>
+        <button onclick="applyPreset('balanced')" class="px-3 py-1.5 rounded-lg border border-bordercolor bg-slate-900 hover:border-emerald-500 text-xs text-slate-300 transition">
+            Balanced Production (Q4_K_M, Q5_K_M, Q8_0)
+        </button>
+        <button onclick="applyPreset('extreme')" class="px-3 py-1.5 rounded-lg border border-bordercolor bg-slate-900 hover:border-emerald-500 text-xs text-slate-300 transition">
+            Extreme Compression (IQ2_M, IQ3_M, IQ4_XS)
+        </button>
+    </div>
+
+    <!-- Pipeline Config Form -->
+    <div class="border border-bordercolor rounded-xl bg-cardbg p-6 space-y-6">
+        <div>
+            <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Base GGUF Checkpoint</label>
+            <input type="text" id="pipe-model" placeholder="/path/to/base-model-f16.gguf" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Output Destination Directory</label>
+                <input type="text" id="pipe-output" placeholder="./dist/my-model-quants" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+            </div>
+            <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Calibration Corpus Preset</label>
+                <select id="pipe-corpus" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                    <option value="general-wiki">general-wiki (Encyclopedic Knowledge)</option>
+                    <option value="code-multilang">code-multilang (Python / JavaScript Code)</option>
+                    <option value="reasoning-math">reasoning-math (Mathematical Proofs & Logic)</option>
+                    <option value="multilingual-mixed">multilingual-mixed (Multilingual Corpora)</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Target Quantization Suite</label>
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" id="quant-checkboxes">
+                {% for q in ["Q4_K_M", "Q5_K_M", "IQ3_M", "Q6_K", "Q8_0", "IQ4_XS", "IQ2_M", "Q3_K_M", "Q4_K_S", "IQ1_M"] %}
+                <label class="flex items-center space-x-2 text-xs font-mono text-slate-300 p-2 rounded-lg border border-bordercolor bg-slate-900/60 cursor-pointer hover:border-emerald-500/50 transition">
+                    <input type="checkbox" value="{{ q }}" class="pipe-quant-cb rounded border-bordercolor text-emerald-500 focus:ring-0 bg-slate-950" {% if q in ['Q4_K_M', 'Q5_K_M', 'Q8_0'] %}checked{% endif %}>
+                    <span>{{ q }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="flex items-center gap-6 pt-2">
+            <label class="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
+                <input type="checkbox" id="pipe-eval" checked class="rounded border-bordercolor text-emerald-500 focus:ring-0 bg-slate-900">
+                <span>Evaluate Perplexity & Compute Pareto Frontier</span>
+            </label>
+            <label class="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
+                <input type="checkbox" id="pipe-card" checked class="rounded border-bordercolor text-emerald-500 focus:ring-0 bg-slate-900">
+                <span>Export Model Card README & Pareto SVG</span>
+            </label>
+        </div>
+
+        <div class="pt-4 border-t border-bordercolor flex justify-end">
+            <button onclick="launchPipeline()" id="pipe-launch-btn" class="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-semibold rounded-lg transition shadow">
+                Execute Automated Pipeline
+            </button>
+        </div>
+    </div>
+
+    <!-- Real-time Pipeline Progress Panel -->
+    <div id="pipe-live-panel" class="border border-bordercolor rounded-xl bg-cardbg p-6 space-y-4 hidden">
+        <h3 class="text-base font-semibold text-white">Pipeline Execution Tracker: <span id="pipe-job-id" class="font-mono text-emerald-400 text-sm"></span></h3>
+        <div class="grid grid-cols-4 gap-2 text-xs font-mono text-center">
+            <div id="step-1" class="p-2 rounded bg-slate-900 border border-bordercolor text-slate-400">1. Calibration</div>
+            <div id="step-2" class="p-2 rounded bg-slate-900 border border-bordercolor text-slate-400">2. Quant Matrix</div>
+            <div id="step-3" class="p-2 rounded bg-slate-900 border border-bordercolor text-slate-400">3. Perplexity</div>
+            <div id="step-4" class="p-2 rounded bg-slate-900 border border-bordercolor text-slate-400">4. Model Card</div>
+        </div>
+        <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-bordercolor">
+            <div id="pipe-progress-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 10%"></div>
+        </div>
+        <div class="p-4 rounded-lg bg-black/60 border border-bordercolor code-font text-xs text-slate-300 h-48 overflow-y-auto space-y-1" id="pipe-feed">
+            <div class="text-slate-500">Pipeline scheduled...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function applyPreset(type) {
+    const cbs = document.querySelectorAll('.pipe-quant-cb');
+    cbs.forEach(cb => cb.checked = false);
+    const targets = type === 'extreme'
+        ? ['IQ2_M', 'IQ3_M', 'IQ4_XS', 'Q4_K_S']
+        : ['Q4_K_M', 'Q5_K_M', 'Q6_K', 'Q8_0'];
+    cbs.forEach(cb => {
+        if (targets.includes(cb.value)) cb.checked = true;
+    });
+}
+
+async function launchPipeline() {
+    const model = document.getElementById('pipe-model').value.trim();
+    const outDir = document.getElementById('pipe-output').value.trim();
+    if (!model) return alert("Please specify input model path.");
+
+    const selectedQuants = Array.from(document.querySelectorAll('.pipe-quant-cb:checked')).map(cb => cb.value);
+    if (selectedQuants.length === 0) return alert("Please select at least one target quant.");
+
+    const btn = document.getElementById('pipe-launch-btn');
+    btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/pipelines/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                input_model: model,
+                output_dir: outDir || './dist',
+                corpus_preset: document.getElementById('pipe-corpus').value,
+                quants: selectedQuants,
+                evaluate: document.getElementById('pipe-eval').checked,
+                export_card: document.getElementById('pipe-card').checked
+            })
+        });
+        const data = await res.json();
+        if (data.job_id) {
+            document.getElementById('pipe-live-panel').classList.remove('hidden');
+            document.getElementById('pipe-job-id').innerText = data.job_id;
+            monitorPipeline(data.job_id);
+        }
+    } catch (e) {
+        alert("Failed to dispatch pipeline: " + e);
+        btn.disabled = false;
+    }
+}
+
+function monitorPipeline(jobId) {
+    const feed = document.getElementById('pipe-feed');
+    const interval = setInterval(async () => {
+        const res = await fetch('/api/jobs/' + jobId);
+        const j = await res.json();
+        if (j.current_step) {
+            const line = document.createElement('div');
+            line.innerText = `[Progress ${j.progress_pct}%] ${j.current_step}`;
+            feed.appendChild(line);
+            feed.scrollTop = feed.scrollHeight;
+            document.getElementById('pipe-progress-bar').style.width = j.progress_pct + '%';
+        }
+        if (j.status === 'completed' || j.status === 'failed') {
+            clearInterval(interval);
+            document.getElementById('pipe-launch-btn').disabled = false;
+            const end = document.createElement('div');
+            end.className = j.status === 'completed' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
+            end.innerText = `Pipeline finished: ${j.status.toUpperCase()}`;
+            feed.appendChild(end);
+            feed.scrollTop = feed.scrollHeight;
+        }
+    }, 2500);
+}
+</script>
+{% endblock %}

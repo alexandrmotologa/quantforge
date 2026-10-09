@@ -48,6 +48,8 @@ class ModelCardGenerator:
         ]
 
         if pareto_report and pareto_report.points:
+            lines.append("![Pareto Quality Frontier](pareto_frontier.svg)")
+            lines.append("")
             lines.append(pareto_report.to_markdown_table())
             lines.append("")
         elif quant_points:

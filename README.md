@@ -4,13 +4,14 @@ QuantForge is an automated GGUF quantization, imatrix calibration, and perplexit
 
 ## Key Capabilities
 
-- **Quantization Engine**: Automates single and matrix runs across all modern llama.cpp quants: legacy formats (Q4_0, Q5_0, Q8_0), K-quants (Q2_K to Q6_K), and importance-matrix formats (IQ1_S through IQ4_NL).
-- **Imatrix Calibration Lab**: Generates custom `.dat` importance matrices using configurable calibration corpora, chunk sizes, and context windows to preserve quality at sub-4-bit levels.
-- **Perplexity Scorer**: Evaluates models against standard datasets such as wikitext-2 or custom validation splits, tracking delta perplexity relative to the FP16 baseline.
-- **Pareto Trade-off Analyzer**: Computes the size versus perplexity versus speed frontier, scoring models by quality per gigabyte to identify optimal deployment points.
-- **Binary Management**: Locates local llama.cpp binaries or downloads verified precompiled releases across Windows and Linux.
-- **Multi-Interface**: Access via Typer CLI for scripting and automation, or run the FastAPI web dashboard for real-time progress graphs, job orchestration, and model comparisons.
-- **Model Card Generator**: Produces ready-to-publish Markdown model cards with quant tables, VRAM requirements, and perplexity trade-off benchmarks.
+- **Quantization Engine**: Automates single and matrix runs across all modern llama.cpp quants: legacy formats (Q4_0, Q5_0, Q8_0), K-quants (Q2_K to Q6_K), and importance-matrix formats (IQ1_S through IQ4_NL). Supports mixed-precision per-tensor overrides (`--tensor-type`).
+- **Imatrix Calibration Lab & Dataset Hub**: Generates custom `.dat` importance matrices using configurable calibration corpora, chunk sizes, and context windows. Includes built-in curated presets (`general-wiki`, `code-multilang`, `reasoning-math`, `multilingual-mixed`) and corpus deduplication tools.
+- **Hugging Face Hub Integration**: Direct pull of unquantized models and automated publishing of complete quantization suites with generated model cards to Hugging Face Hub repositories.
+- **Perplexity & Throughput Profiler**: Evaluates models against validation datasets, tracking delta perplexity relative to the FP16 baseline, and profiles token throughput with `llama-bench`.
+- **Pareto Trade-off Analyzer & SVG Charts**: Computes the size versus perplexity versus speed frontier, generating standalone publication-ready vector SVG charts embedded directly into exported Model Cards.
+- **Hardware Autotuner**: Benchmarks system CPU cores, RAM, and GPU VRAM to calculate optimal thread counts and layer offload allocation (`-ngl`) for quantization and evaluation jobs.
+- **Layer & Tensor Breakdown Inspector**: Deep binary GGUF parser displaying tensor architecture distribution across layers, attention blocks, and feed-forward networks.
+- **Multi-Interface**: Rich Typer CLI with interactive tables and progress spinners, plus a FastAPI dashboard featuring a Visual Pipeline Stepper, Model Library, Studio, and Pareto frontier charts.
 
 ## Quick Start
 
@@ -87,6 +88,46 @@ Generate a comparative Pareto report across multiple quants:
 quantforge pareto ./dist --base ./models/mistral-7b-fp16.gguf --output ./dist/pareto_report.json
 ```
 
+### Hardware Autotuning
+
+Detect host CPU cores, memory limits, and GPU VRAM to calculate optimal threading and layer offloading:
+
+```bash
+quantforge autotune --model ./models/mistral-7b-fp16.gguf
+```
+
+### Calibration Dataset Hub
+
+List and download pre-curated imatrix calibration corpora, or merge domains:
+
+```bash
+quantforge dataset list
+quantforge dataset download general-wiki --output-dir ./data
+quantforge dataset merge ./data/code.txt ./data/wiki.txt --output ./data/combined.txt
+```
+
+### Hugging Face Hub Pull & Push
+
+Download source checkpoints directly from Hugging Face Hub:
+
+```bash
+quantforge pull unsloth/mistral-7b-instruct-v0.3-GGUF --output-dir ./models
+```
+
+Publish a quantized suite with generated model cards and Pareto SVG:
+
+```bash
+quantforge push ./dist/mistral-7b my-org/mistral-7b-gguf-suite --token $HF_TOKEN
+```
+
+### Inspect Layer Breakdown
+
+Examine tensor distributions and attention/FFN layer breakdowns:
+
+```bash
+quantforge inspect ./models/mistral-7b-q4km.gguf -b
+```
+
 ### Web Dashboard
 
 Start the local web dashboard:
@@ -95,7 +136,7 @@ Start the local web dashboard:
 quantforge serve --port 8000
 ```
 
-Open `http://localhost:8000` in your browser to inspect models, launch jobs, monitor live tensor progress, and view Pareto frontier charts.
+Open `http://localhost:8000` in your browser to inspect models, launch jobs, monitor live tensor progress, track visual pipelines at `/pipelines`, and explore the model library at `/models`.
 
 ## Automated Pipelines
 
@@ -136,16 +177,20 @@ src/quantforge/
 │   ├── config.py           # Configuration schemas and typed enums
 │   ├── binary_manager.py   # Discovery, download, and verification of llama.cpp binaries
 │   ├── executor.py         # Subprocess execution with real-time output parsing
+│   ├── autotune.py         # CPU, memory, and GPU hardware profiling & offload heuristics
 │   └── db.py               # SQLite storage for models, jobs, and benchmarks
 ├── engines/
 │   ├── quantize.py         # llama-quantize execution and progress tracking
 │   ├── imatrix.py          # llama-imatrix calibration pipeline
+│   ├── dataset_manager.py  # Calibration dataset presets hub and deduplicated merger
 │   ├── perplexity.py       # llama-perplexity evaluation and delta-PPL calculation
 │   ├── benchmark.py        # llama-bench throughput profiling
 │   └── pareto.py           # Pareto frontier analysis and efficiency scoring
 ├── formats/
-│   ├── gguf_reader.py      # Pure Python GGUF header parser and tensor validator
-│   └── card_generator.py   # Model card generator with benchmark tables
+│   ├── gguf_reader.py      # Pure Python GGUF header parser and tensor breakdown analyzer
+│   ├── pareto_svg.py       # Procedural standalone vector SVG Pareto chart generator
+│   ├── card_generator.py   # Model card generator with embedded SVG & benchmark tables
+│   └── hf_hub.py           # Hugging Face Hub download & suite publisher
 ├── pipelines/
 │   ├── runner.py           # Multi-stage recipe orchestrator
 │   └── templates.py        # Standard quantization recipes
@@ -155,7 +200,7 @@ src/quantforge/
     ├── app.py              # FastAPI application
     ├── api/                # REST endpoints and WebSocket progress feeds
     ├── static/             # Dashboard styles and scripts
-    └── templates/          # Web dashboard views
+    └── templates/          # Web views: Dashboard, Studio, Pipelines, Models, Pareto
 ```
 
 ## Supported Quantization Types

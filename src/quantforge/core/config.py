@@ -164,6 +164,7 @@ class QuantizationConfig(BaseModel):
     leave_output_tensor: bool = False
     pure: bool = False
     threads: Optional[int] = None
+    tensor_type_overrides: Dict[str, str] = Field(default_factory=dict)
     extra_args: List[str] = Field(default_factory=list)
 
     @field_validator("input_path", "output_path", "imatrix_path", mode="after")

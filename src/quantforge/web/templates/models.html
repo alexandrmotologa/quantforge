@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Models Library - QuantForge{% endblock %}
+
+{% block content %}
+<div class="space-y-8 max-w-6xl mx-auto">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-white">Models Library</h1>
+            <p class="text-sm text-slate-400 mt-1">Manage local GGUF checkpoints, inspect tensor architectures, and import from Hugging Face.</p>
+        </div>
+        <button onclick="openHfModal()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-semibold rounded-lg transition shadow">
+            Import from Hugging Face
+        </button>
+    </div>
+
+    <!-- Scanned Models Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="models-grid">
+        {% for m in models %}
+        <div class="p-5 rounded-xl border border-bordercolor bg-cardbg hover:border-slate-700 transition flex flex-col justify-between space-y-4">
+            <div>
+                <div class="flex items-start justify-between">
+                    <span class="text-xs font-mono uppercase bg-slate-800 text-emerald-400 px-2 py-0.5 rounded border border-bordercolor">{{ m.architecture }}</span>
+                    <span class="text-xs font-mono text-slate-400">{{ (m.size_bytes / (1024**3)) | round(2) }} GB</span>
+                </div>
+                <h3 class="text-base font-bold text-white mt-2 truncate" title="{{ m.name }}">{{ m.name }}</h3>
+                <p class="text-xs text-slate-500 font-mono mt-1 truncate">{{ m.file_path }}</p>
+                <div class="mt-3 flex items-center gap-3 text-xs text-slate-400">
+                    <span>Ctx: <strong class="text-slate-200">{{ m.context_length or 'N/A' }}</strong></span>
+                    <span>Tensors: <strong class="text-slate-200">{{ m.tensor_count }}</strong></span>
+                    <span>Quant: <strong class="text-emerald-400">{{ m.dominant_quant or 'F16' }}</strong></span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 pt-3 border-t border-bordercolor">
+                <a href="/studio?model={{ m.file_path }}" class="flex-1 text-center py-1.5 px-3 rounded bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition">
+                    Quantize
+                </a>
+                <a href="/eval?model={{ m.file_path }}" class="flex-1 text-center py-1.5 px-3 rounded bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition">
+                    Benchmark
+                </a>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-span-full p-12 text-center border border-dashed border-bordercolor rounded-xl text-slate-500">
+            No local GGUF models discovered in library storage. Use the button above to import from Hugging Face or place `.gguf` files in <code class="text-slate-400 font-mono">~/.quantforge/models</code>.
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- HF Import Modal -->
+<div id="hf-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+    <div class="bg-cardbg border border-bordercolor rounded-xl max-w-lg w-full p-6 space-y-4 m-4">
+        <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-white">Import from Hugging Face Hub</h3>
+            <button onclick="closeHfModal()" class="text-slate-400 hover:text-white">&times;</button>
+        </div>
+        <p class="text-xs text-slate-400">Specify any model repository ID. QuantForge will auto-select the unquantized or FP16 GGUF file.</p>
+        <div>
+            <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Repository ID</label>
+            <input type="text" id="hf-repo-input" placeholder="unsloth/Llama-3.2-3B-Instruct-GGUF" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+        </div>
+        <div>
+            <label class="block text-xs font-mono uppercase text-slate-400 mb-2">Specific Filename (Optional)</label>
+            <input type="text" id="hf-file-input" placeholder="Llama-3.2-3B-Instruct-F16.gguf" class="w-full bg-slate-900 border border-bordercolor rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono">
+        </div>
+        <div class="flex justify-end gap-3 pt-3 border-t border-bordercolor">
+            <button onclick="closeHfModal()" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition">Cancel</button>
+            <button onclick="submitHfPull()" id="hf-pull-btn" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-semibold transition">
+                Start Download
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function openHfModal() {
+    document.getElementById('hf-modal').classList.remove('hidden');
+}
+
+function closeHfModal() {
+    document.getElementById('hf-modal').classList.add('hidden');
+}
+
+async function submitHfPull() {
+    const repo = document.getElementById('hf-repo-input').value.trim();
+    const file = document.getElementById('hf-file-input').value.trim() || null;
+    if (!repo) return alert("Please specify Hugging Face repo ID.");
+
+    const btn = document.getElementById('hf-pull-btn');
+    btn.disabled = true;
+    btn.innerText = "Downloading...";
+
+    try {
+        const res = await fetch('/api/hf/pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo_id: repo, filename: file })
+        });
+        const data = await res.json();
+        alert(data.message || "Model download complete.");
+        closeHfModal();
+        window.location.reload();
+    } catch (e) {
+        alert("Failed to download model: " + e);
+        btn.disabled = false;
+        btn.innerText = "Start Download";
+    }
+}
+</script>
+{% endblock %}

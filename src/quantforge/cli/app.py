@@ -41,9 +41,11 @@ cli = typer.Typer(
 )
 bin_cli = typer.Typer(help="Manage llama.cpp native binary discovery, inspection, and downloads.")
 pipeline_cli = typer.Typer(help="Automate multi-stage quantization workflows via YAML recipes.")
+dataset_cli = typer.Typer(help="Manage and prepare calibration datasets for importance matrices.")
 
 cli.add_typer(bin_cli, name="bin")
 cli.add_typer(pipeline_cli, name="pipeline")
+cli.add_typer(dataset_cli, name="dataset")
 
 console = Console()
 
@@ -389,11 +391,15 @@ def bench_cmd(
 def inspect_cmd(
     model: Path = typer.Argument(..., help="Path to GGUF model"),
     show_tensors: bool = typer.Option(False, "--tensors", help="Display full tensor table"),
+    breakdown: bool = typer.Option(False, "--breakdown", "-b", help="Display architectural layer memory breakdown"),
     json_output: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """Inspect metadata, architecture, and quantization details of a GGUF file."""
     reader = GGUFReader(model)
-    info = reader.read_model_info(load_tensors=show_tensors)
+    load_t = show_tensors or breakdown
+    info = reader.read_model_info(load_tensors=load_t)
+
+    breakdown_data = reader.get_tensor_breakdown(info) if breakdown else None
 
     if json_output:
         data = {
@@ -407,6 +413,7 @@ def inspect_cmd(
             "parameters": info.estimated_parameters,
             "dominant_quant": info.dominant_quant,
             "metadata_kv_count": info.metadata_kv_count,
+            "breakdown": breakdown_data,
         }
         console.print(json.dumps(data, indent=2))
         return
@@ -425,6 +432,172 @@ def inspect_cmd(
     table.add_row("File Size", f"{info.file_size_bytes / (1024**3):.2f} GB")
 
     console.print(table)
+
+    if breakdown and breakdown_data:
+        bd_table = Table(title="Layer Architectural Breakdown", border_style="emerald")
+        bd_table.add_column("Layer Category", style="bold white")
+        bd_table.add_column("Tensors", justify="right")
+        bd_table.add_column("Parameters", justify="right")
+        bd_table.add_column("% Total", justify="right")
+        bd_table.add_column("Data Types", style="dim")
+
+        for cat, d in breakdown_data.items():
+            param_str = f"{d['params'] / 1e6:.1f}M" if d['params'] < 1e9 else f"{d['params'] / 1e9:.2f}B"
+            types_str = ", ".join(d["types"][:3])
+            bd_table.add_row(cat, str(d["count"]), param_str, f"{d['param_pct']}%", types_str)
+
+        console.print(bd_table)
+
+
+@cli.command("autotune")
+def autotune_cmd(
+    model: Optional[Path] = typer.Option(None, "--model", "-m", help="Optional model to calculate VRAM offload recommendation"),
+):
+    """Detect host CPU/GPU and display optimal threads and offload hyperparameters."""
+    from quantforge.core.autotune import HardwareAutotuner
+    from quantforge.formats.gguf_reader import GGUFReader
+
+    tuner = HardwareAutotuner()
+    prof = tuner.profile()
+
+    model_size_gb = None
+    layers = 32
+    ctx = 4096
+    if model and model.is_file():
+        try:
+            reader = GGUFReader(model)
+            info = reader.read_model_info(load_tensors=False)
+            model_size_gb = info.file_size_bytes / (1024**3)
+            layers = info.block_count or 32
+            ctx = info.context_length or 4096
+        except Exception:
+            model_size_gb = model.stat().st_size / (1024**3)
+
+    rec = tuner.recommend(model_size_gb=model_size_gb, context_length=ctx, layer_count=layers)
+
+    table = Table(title="QuantForge Hardware Auto-Tuner", border_style="cyan")
+    table.add_column("Parameter", style="bold white")
+    table.add_column("Detected / Recommended Value", style="cyan")
+
+    table.add_row("Logical CPU Cores", str(prof.cpu_logical))
+    table.add_row("Physical CPU Cores", str(prof.cpu_physical))
+    table.add_row("Recommended CPU Threads (-t)", str(rec["optimal_threads"]))
+    table.add_row("GPU Detected", "Yes" if prof.gpu_available else "None (CPU Backend)")
+    if prof.gpu_available:
+        table.add_row("GPU Device Name", prof.gpu_name or "N/A")
+        table.add_row("Total GPU VRAM", f"{prof.gpu_vram_gb} GB")
+        table.add_row("GPU Backend", prof.gpu_backend.upper())
+
+    if model_size_gb is not None:
+        table.add_row("Model Size", f"{model_size_gb:.2f} GB")
+        table.add_row("Recommended GPU Layers (-ngl)", str(rec["recommended_n_gpu_layers"]))
+        table.add_row("Fits 100% in VRAM", "[green]Yes[/green]" if rec["fits_fully_in_vram"] else "[yellow]Partial / CPU spill[/yellow]")
+
+    console.print(table)
+
+
+# -------------------------------------------------------------------------
+# HUGGING FACE HUB COMMANDS
+# -------------------------------------------------------------------------
+
+@cli.command("pull")
+def pull_cmd(
+    repo_id: str = typer.Argument(..., help="Hugging Face repository (e.g. unsloth/Llama-3.2-3B-Instruct-GGUF)"),
+    filename: Optional[str] = typer.Option(None, "--file", "-f", help="Specific GGUF file to download"),
+    target_dir: Optional[Path] = typer.Option(None, "--dir", "-d", help="Destination folder"),
+    token: Optional[str] = typer.Option(None, "--token", help="Hugging Face API token"),
+):
+    """Download a GGUF checkpoint directly from Hugging Face Hub."""
+    from quantforge.formats.hf_hub import HFHubManager
+
+    mgr = HFHubManager(token=token)
+    console.print(f"[cyan]Downloading from Hugging Face Hub:[/cyan] [bold]{repo_id}[/bold]")
+    with console.status("[bold green]Downloading checkpoint..."):
+        try:
+            local_path = mgr.pull_model(repo_id=repo_id, filename=filename, target_dir=target_dir)
+            console.print(f"[bold green]Model saved to:[/bold green] {local_path}")
+        except Exception as e:
+            console.print(f"[bold red]Download failed:[/bold red] {e}")
+            raise typer.Exit(1)
+
+
+@cli.command("push")
+def push_cmd(
+    source_path: Path = typer.Argument(..., help="File or directory to upload"),
+    repo: str = typer.Option(..., "--repo", "-r", help="Target Hugging Face repository (e.g. username/my-model-GGUF)"),
+    token: Optional[str] = typer.Option(None, "--token", help="Hugging Face API token"),
+    private: bool = typer.Option(False, "--private", help="Create private repository"),
+    message: Optional[str] = typer.Option(None, "--message", "-m", help="Commit message"),
+):
+    """Publish quantized models and Model Card to Hugging Face Hub."""
+    from quantforge.formats.hf_hub import HFHubManager
+
+    mgr = HFHubManager(token=token)
+    console.print(f"[cyan]Uploading to Hugging Face Hub:[/cyan] [bold]{repo}[/bold]")
+    with console.status("[bold green]Uploading files..."):
+        try:
+            url = mgr.push_models(repo_id=repo, source_path=source_path, commit_message=message, private=private)
+            console.print(f"[bold green]Published successfully at:[/bold green] {url}")
+        except Exception as e:
+            console.print(f"[bold red]Publish failed:[/bold red] {e}")
+            raise typer.Exit(1)
+
+
+# -------------------------------------------------------------------------
+# CALIBRATION DATASET COMMANDS
+# -------------------------------------------------------------------------
+
+@dataset_cli.command("list")
+def dataset_list():
+    """List built-in calibration dataset presets."""
+    from quantforge.engines.dataset_manager import DatasetManager
+
+    mgr = DatasetManager()
+    presets = mgr.list_presets()
+
+    table = Table(title="Calibration Dataset Presets", border_style="cyan")
+    table.add_column("Preset Name", style="bold white")
+    table.add_column("Category", style="cyan")
+    table.add_column("Description", style="dim")
+
+    for p in presets:
+        table.add_row(p.name, p.category, p.description)
+
+    console.print(table)
+
+
+@dataset_cli.command("get")
+def dataset_get(
+    name: str = typer.Argument(..., help="Preset name (e.g. general-wiki, code-multilang)"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Target output text path"),
+    repeats: int = typer.Option(30, "--repeats", "-r", help="Number of repetitions for corpus size"),
+):
+    """Generate a calibration corpus file from a preset."""
+    from quantforge.engines.dataset_manager import DatasetManager
+
+    mgr = DatasetManager()
+    try:
+        out_path = mgr.generate_corpus(name, target_path=output, repeats=repeats)
+        size_kb = out_path.stat().st_size / 1024
+        console.print(f"[bold green]Corpus created successfully:[/bold green] {out_path} ({size_kb:.1f} KB)")
+    except Exception as e:
+        console.print(f"[bold red]Failed to generate corpus:[/bold red] {e}")
+        raise typer.Exit(1)
+
+
+@dataset_cli.command("prepare")
+def dataset_prepare(
+    files: List[Path] = typer.Argument(..., help="List of input text files to merge and clean"),
+    output: Path = typer.Option(..., "--output", "-o", help="Destination merged corpus file"),
+    no_dedup: bool = typer.Option(False, "--no-dedup", help="Disable duplicate paragraph filtering"),
+):
+    """Merge and deduplicate raw text files into a single calibration corpus."""
+    from quantforge.engines.dataset_manager import DatasetManager
+
+    mgr = DatasetManager()
+    out = mgr.prepare_corpus(files, output_path=output, deduplicate=not no_dedup)
+    size_kb = out.stat().st_size / 1024
+    console.print(f"[bold green]Cleaned corpus prepared:[/bold green] {out} ({size_kb:.1f} KB)")
 
 
 # -------------------------------------------------------------------------

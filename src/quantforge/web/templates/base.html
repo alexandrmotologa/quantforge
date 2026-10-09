@@ -47,9 +47,11 @@
                     <span class="text-xl font-bold tracking-tight text-white">QuantForge <span class="text-xs font-mono uppercase bg-emerald-950 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded ml-1.5">Lab</span></span>
                 </a>
             </div>
-            <nav class="flex items-center space-x-1 sm:space-x-4 text-sm font-medium">
+            <nav class="flex items-center space-x-1 sm:space-x-3 text-sm font-medium">
                 <a href="/" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Dashboard</a>
-                <a href="/studio" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/studio' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Quant Studio</a>
+                <a href="/studio" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/studio' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Studio</a>
+                <a href="/pipelines" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/pipelines' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Pipelines</a>
+                <a href="/models" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/models' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Models</a>
                 <a href="/eval" class="px-3 py-1.5 rounded-md hover:bg-slate-800 transition {% if request.url.path == '/eval' %}text-emerald-400 bg-slate-800/60{% else %}text-slate-300{% endif %}">Pareto Lab</a>
             </nav>
             <div class="flex items-center space-x-3 text-xs text-slate-400">

@@ -66,6 +66,10 @@ class QuantizeEngine:
         if config.pure:
             cmd.append("--pure")
 
+        # Tensor type overrides
+        for tensor_pat, target_q in config.tensor_type_overrides.items():
+            cmd.extend(["--tensor-type", f"{tensor_pat}={target_q}"])
+
         # Positional arguments: input, output, type, [threads]
         cmd.append(str(config.input_path))
         cmd.append(str(config.output_path))

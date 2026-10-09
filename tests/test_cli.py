@@ -48,3 +48,15 @@ def test_cli_inspect(tmp_path: Path):
     json_res = runner.invoke(cli, ["inspect", str(model), "--json"])
     assert json_res.exit_code == 0
     assert '"architecture": "llama"' in json_res.stdout
+
+
+def test_cli_pull_help():
+    res = runner.invoke(cli, ["pull", "--help"])
+    assert res.exit_code == 0
+    assert "Download a GGUF checkpoint" in res.stdout
+
+
+def test_cli_push_help():
+    res = runner.invoke(cli, ["push", "--help"])
+    assert res.exit_code == 0
+    assert "Publish quantized models" in res.stdout

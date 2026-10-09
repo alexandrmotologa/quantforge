@@ -63,3 +63,47 @@ def test_web_eval_html():
     response = client.get("/eval")
     assert response.status_code == 200
     assert "Pareto Quality Lab" in response.text
+
+
+def test_web_pipelines_html():
+    response = client.get("/pipelines")
+    assert response.status_code == 200
+    assert "Automated Pipelines Lab" in response.text
+
+
+def test_web_models_html():
+    response = client.get("/models")
+    assert response.status_code == 200
+    assert "Models Library" in response.text
+
+
+def test_api_autotune():
+    response = client.get("/api/system/autotune?model_size_gb=4.0")
+    assert response.status_code == 200
+    data = response.json()
+    assert "optimal_threads" in data
+    assert "recommended_n_gpu_layers" in data
+
+
+def test_api_datasets_presets():
+    response = client.get("/api/datasets/presets")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) >= 4
+    assert any(p["name"] == "general-wiki" for p in data)
+
+
+def test_api_pipeline_run_dispatch():
+    payload = {
+        "input_model": "test_model.gguf",
+        "output_dir": "./dist",
+        "corpus_preset": "general-wiki",
+        "quants": ["Q4_K_M"],
+        "evaluate": False,
+        "export_card": False,
+    }
+    response = client.post("/api/pipelines/run", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "job_id" in data
+    assert data["status"] == "queued"

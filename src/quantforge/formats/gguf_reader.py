@@ -194,6 +194,51 @@ class GGUFReader:
                 tensors=tensors,
             )
 
+    def get_tensor_breakdown(self, info: GGUFModelInfo) -> Dict[str, Dict[str, Any]]:
+        """Classifies tensors into functional architectural groups with parameter counts."""
+        categories: Dict[str, Dict[str, Any]] = {
+            "Embeddings": {"count": 0, "params": 0, "types": set()},
+            "Attention": {"count": 0, "params": 0, "types": set()},
+            "Feed-Forward": {"count": 0, "params": 0, "types": set()},
+            "Normalization": {"count": 0, "params": 0, "types": set()},
+            "Output Head": {"count": 0, "params": 0, "types": set()},
+            "Other": {"count": 0, "params": 0, "types": set()},
+        }
+
+        total_p = max(info.estimated_parameters, 1)
+
+        for t in info.tensors:
+            name_lower = t.name.lower()
+            if "embd" in name_lower:
+                cat = "Embeddings"
+            elif any(k in name_lower for k in ["output.weight", "lm_head"]):
+                cat = "Output Head"
+            elif any(k in name_lower for k in ["norm"]):
+                cat = "Normalization"
+            elif any(k in name_lower for k in ["attn", "wq", "wk", "wv", "wo", "q_proj", "k_proj", "v_proj", "o_proj"]):
+                cat = "Attention"
+            elif any(k in name_lower for k in ["ffn", "mlp", "w1", "w2", "w3", "gate", "up_proj", "down_proj"]):
+                cat = "Feed-Forward"
+            else:
+                cat = "Other"
+
+            categories[cat]["count"] += 1
+            categories[cat]["params"] += t.element_count
+            categories[cat]["types"].add(t.type_name)
+
+        # Calculate percentages and serialize types to list
+        result = {}
+        for cat, data in categories.items():
+            if data["count"] > 0:
+                result[cat] = {
+                    "count": data["count"],
+                    "params": data["params"],
+                    "param_pct": round((data["params"] / total_p) * 100.0, 2),
+                    "types": sorted(list(data["types"])),
+                }
+
+        return result
+
     def _read_string(self, f) -> str:
         length = struct.unpack("<Q", f.read(8))[0]
         data = f.read(length)
