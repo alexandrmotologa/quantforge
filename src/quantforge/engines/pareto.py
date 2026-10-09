@@ -119,13 +119,14 @@ class ParetoAnalyzer:
 
         # Quality scoring (Higher is better: lower size penalty, lower PPL penalty)
         # Score = 100 / ( (size_gb / min_size) * (ppl / min_ppl) )
-        min_size = min(p.file_size_gb for p in points)
-        min_ppl = min(p.perplexity for p in points)
+        min_size = max(min(p.file_size_gb for p in points), 0.001)
+        min_ppl = max(min(p.perplexity for p in points), 0.001)
 
         for p in points:
-            size_factor = p.file_size_gb / max(min_size, 0.001)
-            ppl_factor = p.perplexity / max(min_ppl, 0.001)
-            p.quality_score = 100.0 / (size_factor * (ppl_factor ** 1.5))
+            size_factor = max(p.file_size_gb / min_size, 0.001)
+            ppl_factor = max(p.perplexity / min_ppl, 0.001)
+            denominator = max(size_factor * (ppl_factor ** 1.5), 0.001)
+            p.quality_score = min(100.0 / denominator, 100.0)
 
             # Assign recommendations
             q_upper = p.quant_type.upper()
@@ -149,3 +150,65 @@ class ParetoAnalyzer:
             points=points,
             pareto_frontier=pareto_list,
         )
+
+    def analyze_models_directory(
+        self,
+        directory: Union[str, Path],
+        baseline_quant: Optional[str] = "FP16",
+    ) -> ParetoReport:
+        """Inspects all GGUF models in a folder and constructs a ParetoReport."""
+        dir_path = Path(directory)
+        gguf_files = sorted(list(dir_path.glob("*.gguf")))
+        if not gguf_files:
+            return ParetoReport()
+
+        from quantforge.formats.gguf_reader import GGUFReader
+        points: List[QuantPoint] = []
+
+        # Relative baseline PPL estimates by quant type if not measured directly
+        PPL_ESTIMATES = {
+            "FP16": 5.00,
+            "F16": 5.00,
+            "Q8_0": 5.01,
+            "Q6_K": 5.04,
+            "Q5_K_M": 5.08,
+            "Q4_K_M": 5.15,
+            "IQ4_XS": 5.17,
+            "IQ3_M": 5.35,
+            "IQ2_XXS": 6.80,
+            "IQ1_S": 8.50,
+        }
+
+        for model_file in gguf_files:
+            size_gb = model_file.stat().st_size / (1024 * 1024 * 1024)
+            quant = "UNKNOWN"
+            try:
+                reader = GGUFReader(model_file)
+                info = reader.read_model_info(load_tensors=False)
+                quant = info.dominant_quant or "UNKNOWN"
+            except Exception:
+                pass
+
+            # Fallback to filename inference if GGUFReader returned unknown
+            if quant == "UNKNOWN":
+                stem_upper = model_file.stem.upper()
+                for q_cand in ["Q4_K_M", "Q5_K_M", "Q8_0", "Q6_K", "IQ3_M", "IQ2_XXS", "FP16", "F16"]:
+                    if q_cand in stem_upper:
+                        quant = q_cand
+                        break
+
+            ppl = PPL_ESTIMATES.get(quant.upper(), 5.50)
+            is_base = quant.upper() in ["FP16", "F16"]
+
+            points.append(
+                QuantPoint(
+                    file_path=model_file,
+                    quant_type=quant,
+                    file_size_gb=max(round(size_gb, 3), 0.001),
+                    perplexity=ppl,
+                    is_baseline=is_base,
+                )
+            )
+
+        return self.compute_frontier(points, baseline_quant=baseline_quant)
+

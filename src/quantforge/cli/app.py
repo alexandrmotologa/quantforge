@@ -30,7 +30,13 @@ from quantforge.engines.imatrix import ImatrixEngine
 from quantforge.engines.pareto import ParetoAnalyzer, QuantPoint
 from quantforge.engines.perplexity import PerplexityEngine
 from quantforge.engines.quantize import QuantizeEngine
+from quantforge.core.vram_calc import calculate_vram_from_gguf
+from quantforge.engines.canary import CanaryEngine
+from quantforge.engines.lora import LoRAAdapter, LoRAMergeEngine
+from quantforge.formats.exporter import ModelExporter
 from quantforge.formats.gguf_reader import GGUFReader
+from quantforge.formats.html_report import HTMLReportGenerator
+from quantforge.formats.splitter import GGUFSplitter
 from quantforge.pipelines.runner import PipelineRunner
 from quantforge.pipelines.templates import BALANCED_RECIPE, EXTREME_COMPRESSION_RECIPE, dump_recipe_to_yaml
 
@@ -42,10 +48,14 @@ cli = typer.Typer(
 bin_cli = typer.Typer(help="Manage llama.cpp native binary discovery, inspection, and downloads.")
 pipeline_cli = typer.Typer(help="Automate multi-stage quantization workflows via YAML recipes.")
 dataset_cli = typer.Typer(help="Manage and prepare calibration datasets for importance matrices.")
+export_cli = typer.Typer(help="Export quantized models to Ollama Modelfile or InferOps manifests.")
+lora_cli = typer.Typer(help="Merge LoRA adapters into base GGUF checkpoints.")
 
 cli.add_typer(bin_cli, name="bin")
 cli.add_typer(pipeline_cli, name="pipeline")
 cli.add_typer(dataset_cli, name="dataset")
+cli.add_typer(export_cli, name="export")
+cli.add_typer(lora_cli, name="lora")
 
 console = Console()
 
@@ -643,6 +653,232 @@ def pipeline_run(
     else:
         console.print(f"[bold red]Pipeline failed:[/bold red] {summary.error_message}")
         raise typer.Exit(1)
+
+
+# -------------------------------------------------------------------------
+# VRAM CALCULATOR COMMAND
+# -------------------------------------------------------------------------
+
+@cli.command("vram-calc")
+def vram_calc_cmd(
+    model: Path = typer.Argument(..., help="Path to GGUF model file"),
+    ctx_size: Optional[int] = typer.Option(None, "--ctx-size", "-c", help="Context window size in tokens"),
+    kv_quant: str = typer.Option("fp16", "--kv-quant", "-k", help="KV cache quantization (fp16, q8_0, q4_0)"),
+):
+    """Estimate weights, KV cache, and total GPU VRAM memory requirements."""
+    try:
+        est = calculate_vram_from_gguf(model, context_size=ctx_size, kv_quant=kv_quant)
+    except Exception as exc:
+        console.print(f"[bold red]Failed to calculate VRAM footprint:[/bold red] {exc}")
+        raise typer.Exit(1)
+
+    console.print(Panel(est.summary(), title=f"VRAM Simulator: {model.name}", border_style="cyan"))
+
+    table = Table(title="GPU Hardware Compatibility Matrix", show_header=True, header_style="bold magenta")
+    table.add_column("GPU Tier", style="cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("Max Context Supported", justify="right", style="green")
+
+    for gpu_name, fits in est.fits_gpus.items():
+        status = "[bold green]FITS[/bold green]" if fits else "[bold red]OOM[/bold red]"
+        max_ctx = f"{est.max_context_per_gpu.get(gpu_name, 0):,} tokens"
+        table.add_row(gpu_name, status, max_ctx)
+
+    console.print(table)
+
+
+# -------------------------------------------------------------------------
+# EXPORT COMMANDS (OLLAMA & INFEROPS)
+# -------------------------------------------------------------------------
+
+@export_cli.command("ollama")
+def export_ollama_cmd(
+    model: Path = typer.Argument(..., help="Path to GGUF model file"),
+    output: Path = typer.Option(Path("./Modelfile"), "--output", "-o", help="Target Modelfile path"),
+    system: Optional[str] = typer.Option(None, "--system", "-s", help="Optional system prompt"),
+):
+    """Generate an Ollama Modelfile with extracted chat template and stop tokens."""
+    try:
+        exporter = ModelExporter(model)
+        content = exporter.generate_modelfile(system_prompt=system)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        console.print(f"[bold green]Ollama Modelfile successfully written to:[/bold green] {output}")
+    except Exception as exc:
+        console.print(f"[bold red]Export failed:[/bold red] {exc}")
+        raise typer.Exit(1)
+
+
+@export_cli.command("inferops")
+def export_inferops_cmd(
+    model: Path = typer.Argument(..., help="Path to GGUF model file"),
+    output: Path = typer.Option(Path("./inferops.yaml"), "--output", "-o", help="Target inferops.yaml path"),
+    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
+):
+    """Generate an InferOps runtime service specification YAML manifest."""
+    try:
+        exporter = ModelExporter(model)
+        pkg = exporter.export(output_dir=output.parent)
+        if output.name != "inferops.yaml":
+            output.write_text(pkg.inferops_yaml_content, encoding="utf-8")
+        console.print(f"[bold green]InferOps manifest successfully written to:[/bold green] {output}")
+    except Exception as exc:
+        console.print(f"[bold red]Export failed:[/bold red] {exc}")
+        raise typer.Exit(1)
+
+
+# -------------------------------------------------------------------------
+# LORA MERGE COMMAND
+# -------------------------------------------------------------------------
+
+@lora_cli.command("merge")
+def lora_merge_cmd(
+    base: Path = typer.Option(..., "--base", "-b", help="Base unquantized GGUF model"),
+    lora_path: Path = typer.Option(..., "--lora", "-l", help="Path to LoRA adapter file"),
+    output: Path = typer.Option(..., "--output", "-o", help="Path for merged GGUF output"),
+    scale: float = typer.Option(1.0, "--scale", "-s", help="LoRA scaling multiplier"),
+    threads: Optional[int] = typer.Option(None, "--threads", "-t", help="CPU thread count"),
+):
+    """Merge LoRA adapter weights directly into a base GGUF model."""
+    engine = LoRAMergeEngine()
+    adapter = LoRAAdapter(path=lora_path, scale=scale)
+
+    console.print(f"[bold cyan]Merging LoRA adapter into base model:[/bold cyan] {base.name}")
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as prog:
+        task = prog.add_task("Merging tensors...", total=None)
+        res = asyncio.run(engine.merge(base_model=base, output_path=output, adapters=[adapter], threads=threads))
+        prog.update(task, completed=True)
+
+    if res.success:
+        console.print(f"[bold green]LoRA merge completed successfully:[/bold green] {output} ({res.duration_seconds:.1f}s)")
+    else:
+        console.print(f"[bold red]LoRA merge failed:[/bold red] {res.error_message}")
+        raise typer.Exit(1)
+
+
+# -------------------------------------------------------------------------
+# CANARY DEGENERATION BENCHMARK COMMAND
+# -------------------------------------------------------------------------
+
+@cli.command("canary")
+def canary_cmd(
+    model: Path = typer.Argument(..., help="Path to quantized GGUF model file"),
+    temperature: float = typer.Option(0.1, "--temp", help="Sampling temperature"),
+    threads: Optional[int] = typer.Option(None, "--threads", "-t", help="CPU thread count"),
+):
+    """Run zero-shot canary prompts to test for repetition loops and broken syntax."""
+    engine = CanaryEngine()
+    console.print(f"[bold cyan]Executing zero-shot canary quality benchmark on:[/bold cyan] {model.name}")
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as prog:
+        task = prog.add_task("Running canary test battery...", total=None)
+        report = asyncio.run(engine.run_benchmark(model, temperature=temperature, threads=threads))
+        prog.update(task, completed=True)
+
+    table = Table(title=f"Canary Quality Report ({report.pass_rate_pct}% Pass Rate)", show_header=True)
+    table.add_column("Test Case", style="cyan")
+    table.add_column("Category", style="dim")
+    table.add_column("Outcome", justify="center")
+    table.add_column("Latency (s)", justify="right")
+
+    for res in report.test_results:
+        status = "[bold green]PASS[/bold green]" if res.passed else "[bold red]FAIL[/bold red]"
+        table.add_row(res.name, res.category, status, f"{res.latency_seconds:.2f}s")
+
+    console.print(table)
+    console.print(f"• 4-gram Diversity Ratio: [bold]{report.repetition_ratio:.2f}[/bold] (Higher is more coherent)")
+
+
+# -------------------------------------------------------------------------
+# GGUF SHARDING (SPLIT & MERGE) COMMANDS
+# -------------------------------------------------------------------------
+
+@cli.command("split")
+def split_cmd(
+    model: Path = typer.Argument(..., help="Path to large GGUF model file"),
+    output_prefix: Path = typer.Option(..., "--output-prefix", "-o", help="Destination path prefix for shards"),
+    max_size: str = typer.Option("4G", "--max-size", "-s", help="Maximum size per split volume (e.g., 2G, 4G, 20G)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print split plan without writing shards"),
+):
+    """Split a multi-gigabyte GGUF model into sharded volumes for distribution."""
+    splitter = GGUFSplitter()
+    console.print(f"[bold cyan]Partitioning model into {max_size} shards:[/bold cyan] {model.name}")
+
+    res = asyncio.run(splitter.split(model, output_prefix=output_prefix, max_size=max_size, dry_run=dry_run))
+
+    if res.success:
+        console.print(f"[bold green]Successfully partitioned model into {len(res.split_files)} shards![/bold green]")
+        for s in res.split_files:
+            console.print(f"  • {s.name} ({s.stat().st_size / (1024**3):.2f} GB)")
+    else:
+        console.print(f"[bold red]Splitting failed:[/bold red] {res.error_message}")
+        raise typer.Exit(1)
+
+
+@cli.command("merge-shards")
+def merge_shards_cmd(
+    first_shard: Path = typer.Argument(..., help="Path to first shard (e.g., model-00001-of-00004.gguf)"),
+    output: Path = typer.Option(..., "--output", "-o", help="Target unified GGUF file"),
+    delete_splits: bool = typer.Option(False, "--delete-splits", help="Delete source shards after successful merge"),
+):
+    """Reassemble GGUF sharded volumes into a single unified checkpoint."""
+    splitter = GGUFSplitter()
+    console.print(f"[bold cyan]Reassembling sharded GGUF volumes starting from:[/bold cyan] {first_shard.name}")
+
+    res = asyncio.run(splitter.merge(first_shard, output_file=output, delete_splits=delete_splits))
+
+    if res.success:
+        console.print(f"[bold green]Successfully reassembled unified model:[/bold green] {output}")
+    else:
+        console.print(f"[bold red]Reassembly failed:[/bold red] {res.error_message}")
+        raise typer.Exit(1)
+
+
+# -------------------------------------------------------------------------
+# STANDALONE HTML REPORT COMMAND
+# -------------------------------------------------------------------------
+
+@cli.command("report")
+def report_cmd(
+    dir_path: Path = typer.Argument(..., help="Directory containing quantized GGUF models or pareto report"),
+    output: Path = typer.Option(Path("./benchmark_report.html"), "--output", "-o", help="Target HTML file path"),
+    model_name: Optional[str] = typer.Option(None, "--name", "-n", help="Model family name"),
+):
+    """Generate a standalone, zero-dependency offline HTML benchmark report."""
+    analyzer = ParetoAnalyzer()
+    m_name = model_name or dir_path.name
+
+    if dir_path.is_file() and dir_path.suffix == ".json":
+        # Load from existing pareto report JSON
+        try:
+            data = json.loads(dir_path.read_text(encoding="utf-8"))
+            points = [
+                QuantPoint(
+                    file_path=Path(p["file_path"]),
+                    quant_type=p["quant_type"],
+                    file_size_gb=p["file_size_gb"],
+                    perplexity=p["perplexity"],
+                    delta_ppl=p.get("delta_ppl"),
+                    quality_score=p.get("quality_score", 0.0),
+                    is_pareto_optimal=p.get("is_pareto_optimal", False),
+                )
+                for p in data.get("points", [])
+            ]
+            pareto_rep = analyzer.compute_frontier(points)
+        except Exception as exc:
+            console.print(f"[bold red]Failed to parse pareto json:[/bold red] {exc}")
+            raise typer.Exit(1)
+    else:
+        # Discover GGUF files in directory
+        gguf_files = list(dir_path.glob("*.gguf"))
+        if not gguf_files:
+            console.print(f"[bold red]No GGUF models found in directory:[/bold red] {dir_path}")
+            raise typer.Exit(1)
+        pareto_rep = analyzer.analyze_models_directory(dir_path)
+
+    gen = HTMLReportGenerator()
+    gen.generate(pareto_rep, model_name=m_name, output_file=output)
+    console.print(f"[bold green]Standalone HTML benchmark report generated at:[/bold green] {output}")
 
 
 # -------------------------------------------------------------------------

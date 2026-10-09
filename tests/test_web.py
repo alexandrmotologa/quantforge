@@ -107,3 +107,45 @@ def test_api_pipeline_run_dispatch():
     data = response.json()
     assert "job_id" in data
     assert data["status"] == "queued"
+
+
+def test_api_vram_calculate(tmp_path: Path):
+    model = tmp_path / "model.gguf"
+    write_synthetic_gguf(model)
+
+    payload = {
+        "model_path": str(model),
+        "context_size": 4096,
+        "kv_quant": "q8_0",
+    }
+    response = client.post("/api/vram/calculate", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_vram_gb" in data
+    assert "fits_gpus" in data
+    assert "8GB (RTX 4060 / Apple M-series 8G)" in data["fits_gpus"]
+
+
+def test_api_export_endpoints(tmp_path: Path):
+    model = tmp_path / "model.gguf"
+    write_synthetic_gguf(model)
+
+    res_ollama = client.post("/api/export", json={"model_path": str(model), "format": "ollama"})
+    assert res_ollama.status_code == 200
+    assert "FROM " in res_ollama.json()["content"]
+
+    res_infer = client.post("/api/export", json={"model_path": str(model), "format": "inferops"})
+    assert res_infer.status_code == 200
+    assert "llama.cpp" in res_infer.json()["content"]
+
+
+def test_web_report_html_view(tmp_path: Path):
+    model = tmp_path / "model.gguf"
+    write_synthetic_gguf(model)
+
+    response = client.get(f"/report/html?models_dir={str(tmp_path)}")
+    assert response.status_code == 200
+    assert "QuantForge" in response.text
+    assert "Optimization Report" in response.text
+    assert "Pareto Quality vs. Size Frontier" in response.text
+

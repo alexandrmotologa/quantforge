@@ -556,3 +556,130 @@ async def api_pipeline_run(req: PipelineRunRequest, background_tasks: Background
 
     background_tasks.add_task(_runner)
     return {"job_id": job_id, "status": "queued"}
+
+
+# -------------------------------------------------------------------------
+# VRAM & EXPORT REST ENDPOINTS
+# -------------------------------------------------------------------------
+
+class VRAMRequest(BaseModel):
+    model_path: str
+    context_size: int = 8192
+    kv_quant: str = "fp16"
+
+
+class ExportModelRequest(BaseModel):
+    model_path: str
+    format: str = "ollama"
+    system_prompt: Optional[str] = None
+
+
+class CanaryRunRequest(BaseModel):
+    model_path: str
+    temperature: float = 0.1
+
+
+@app.post("/api/vram/calculate")
+async def api_vram_calculate(req: VRAMRequest):
+    """Calculates model weights, KV cache, and GPU hardware compatibility matrix."""
+    from quantforge.core.vram_calc import calculate_vram_from_gguf
+
+    p = Path(req.model_path)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail=f"Model file not found: {req.model_path}")
+
+    try:
+        est = calculate_vram_from_gguf(p, context_size=req.context_size, kv_quant=req.kv_quant)
+        return {
+            "model_size_mb": est.model_size_mb,
+            "model_size_gb": est.model_size_gb,
+            "kv_cache_mb": est.kv_cache_mb,
+            "kv_cache_gb": est.kv_cache_gb,
+            "activation_scratch_mb": est.activation_scratch_mb,
+            "cuda_overhead_mb": est.cuda_overhead_mb,
+            "total_vram_mb": est.total_vram_mb,
+            "total_vram_gb": est.total_vram_gb,
+            "context_size": est.context_size,
+            "kv_quant": est.kv_quant,
+            "fits_gpus": est.fits_gpus,
+            "max_context_per_gpu": est.max_context_per_gpu,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/export")
+async def api_export_model(req: ExportModelRequest):
+    """Generates an Ollama Modelfile or InferOps runtime service manifest."""
+    from quantforge.formats.exporter import ModelExporter
+
+    p = Path(req.model_path)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail=f"Model file not found: {req.model_path}")
+
+    try:
+        exporter = ModelExporter(p)
+        pkg = exporter.export(system_prompt=req.system_prompt)
+        if req.format.lower() == "inferops":
+            return {
+                "format": "inferops",
+                "filename": "inferops.yaml",
+                "content": pkg.inferops_yaml_content,
+            }
+        return {
+            "format": "ollama",
+            "filename": "Modelfile",
+            "content": pkg.modelfile_content,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/canary/run")
+async def api_canary_run(req: CanaryRunRequest):
+    """Executes zero-shot canary degradation benchmark on the specified model."""
+    from quantforge.engines.canary import CanaryEngine
+
+    p = Path(req.model_path)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail=f"Model file not found: {req.model_path}")
+
+    try:
+        engine = CanaryEngine(binary_manager)
+        report = await engine.run_benchmark(p, temperature=req.temperature)
+        return {
+            "model": str(p),
+            "total_tests": report.total_tests,
+            "passed_tests": report.passed_tests,
+            "pass_rate_pct": report.pass_rate_pct,
+            "repetition_ratio": report.repetition_ratio,
+            "duration_seconds": report.duration_seconds,
+            "tests": [
+                {
+                    "name": t.name,
+                    "category": t.category,
+                    "passed": t.passed,
+                    "latency_seconds": round(t.latency_seconds, 2),
+                    "error": t.error_message,
+                }
+                for t in report.test_results
+            ],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/report/html", response_class=HTMLResponse)
+async def view_html_report(models_dir: Optional[str] = None):
+    """Renders standalone offline HTML optimization report for local models."""
+    from quantforge.engines.pareto import ParetoAnalyzer
+    from quantforge.formats.html_report import HTMLReportGenerator
+
+    target_dir = Path(models_dir) if models_dir else settings.data_dir / "models"
+    analyzer = ParetoAnalyzer()
+    pareto_report = analyzer.analyze_models_directory(target_dir)
+
+    generator = HTMLReportGenerator()
+    html = generator.generate(pareto_report, model_name=target_dir.name or "QuantForge Models")
+    return HTMLResponse(content=html)
+

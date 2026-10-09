@@ -10,7 +10,12 @@ QuantForge is an automated GGUF quantization, imatrix calibration, and perplexit
 - **Perplexity & Throughput Profiler**: Evaluates models against validation datasets, tracking delta perplexity relative to the FP16 baseline, and profiles token throughput with `llama-bench`.
 - **Pareto Trade-off Analyzer & SVG Charts**: Computes the size versus perplexity versus speed frontier, generating standalone publication-ready vector SVG charts embedded directly into exported Model Cards.
 - **Hardware Autotuner**: Benchmarks system CPU cores, RAM, and GPU VRAM to calculate optimal thread counts and layer offload allocation (`-ngl`) for quantization and evaluation jobs.
-- **Layer & Tensor Breakdown Inspector**: Deep binary GGUF parser displaying tensor architecture distribution across layers, attention blocks, and feed-forward networks.
+- **VRAM & KV Cache Simulator**: Calculates model weights, KV cache memory footprint (FP16, Q8_0, Q4_0), CUDA overhead, and GPU hardware compatibility matrix across context windows up to 128K.
+- **Ollama & InferOps Exporter**: Generates production-ready `Modelfile` with inferred chat templates and stop tokens, plus InferOps runtime service specifications.
+- **Canary Quality Benchmarks**: Runs automated zero-shot validation testing structured JSON output, Python code syntax, reasoning, and n-gram repetition degradation.
+- **GGUF Sharding & Splitting**: Automates volume partitioning and reassembly for large 70B+ models exceeding single-file filesystem and repository limits.
+- **LoRA Adapter Merge Engine**: Merges fine-tuned LoRA checkpoints directly into base unquantized GGUF checkpoints before quantization.
+- **Standalone HTML Benchmark Reports**: Exports zero-dependency, single-file offline HTML optimization reports with embedded SVG charts and an interactive VRAM simulator.
 - **Multi-Interface**: Rich Typer CLI with interactive tables and progress spinners, plus a FastAPI dashboard featuring a Visual Pipeline Stepper, Model Library, Studio, and Pareto frontier charts.
 
 ## Quick Start
@@ -128,6 +133,66 @@ Examine tensor distributions and attention/FFN layer breakdowns:
 quantforge inspect ./models/mistral-7b-q4km.gguf -b
 ```
 
+### VRAM & KV Cache Simulator
+
+Calculate precise weights, KV cache (FP16, Q8_0, Q4_0), CUDA overhead, and GPU tier compatibility:
+
+```bash
+quantforge vram-calc ./models/mistral-7b-q4km.gguf --ctx-size 8192 --kv-quant q8_0
+```
+
+### Export to Ollama & InferOps
+
+Generate an Ollama `Modelfile` with extracted chat templates and stop tokens:
+
+```bash
+quantforge export ollama ./models/mistral-7b-q4km.gguf --output ./Modelfile
+```
+
+Generate an InferOps runtime service manifest:
+
+```bash
+quantforge export inferops ./models/mistral-7b-q4km.gguf --output ./inferops.yaml
+```
+
+### LoRA Merge Engine
+
+Merge fine-tuned LoRA adapters directly into a base GGUF checkpoint:
+
+```bash
+quantforge lora merge --base ./models/base-fp16.gguf --lora ./adapters/math-lora.bin --scale 1.0 --output ./models/merged-fp16.gguf
+```
+
+### Canary & Quality Degeneration Benchmark
+
+Run automated zero-shot battery prompts (JSON parsing, code syntax, logic riddle, repetition 4-grams) to detect quality loss:
+
+```bash
+quantforge canary ./models/mistral-7b-iq3m.gguf
+```
+
+### GGUF Sharding & Splitting
+
+Partition large 70B+ checkpoints into volume shards for easier storage and upload:
+
+```bash
+quantforge split ./models/llama-70b-q4km.gguf --output-prefix ./dist/sharded/llama-70b --max-size 4G
+```
+
+Reassemble volume shards into a single unified model:
+
+```bash
+quantforge merge-shards ./dist/sharded/llama-70b-00001-of-00004.gguf --output ./models/llama-70b-merged.gguf
+```
+
+### Standalone HTML Benchmark Report
+
+Export an offline, zero-dependency HTML optimization report with embedded SVG Pareto charts and an interactive VRAM simulator:
+
+```bash
+quantforge report ./dist/mistral-7b --output ./dist/mistral-7b/report.html
+```
+
 ### Web Dashboard
 
 Start the local web dashboard:
@@ -178,6 +243,7 @@ src/quantforge/
 │   ├── binary_manager.py   # Discovery, download, and verification of llama.cpp binaries
 │   ├── executor.py         # Subprocess execution with real-time output parsing
 │   ├── autotune.py         # CPU, memory, and GPU hardware profiling & offload heuristics
+│   ├── vram_calc.py        # Weights, KV cache, and GPU hardware compatibility matrix
 │   └── db.py               # SQLite storage for models, jobs, and benchmarks
 ├── engines/
 │   ├── quantize.py         # llama-quantize execution and progress tracking
@@ -185,11 +251,16 @@ src/quantforge/
 │   ├── dataset_manager.py  # Calibration dataset presets hub and deduplicated merger
 │   ├── perplexity.py       # llama-perplexity evaluation and delta-PPL calculation
 │   ├── benchmark.py        # llama-bench throughput profiling
-│   └── pareto.py           # Pareto frontier analysis and efficiency scoring
+│   ├── pareto.py           # Pareto frontier analysis and efficiency scoring
+│   ├── canary.py           # Zero-shot validation prompts and degeneration testing
+│   └── lora.py             # LoRA adapter merge engine
 ├── formats/
 │   ├── gguf_reader.py      # Pure Python GGUF header parser and tensor breakdown analyzer
 │   ├── pareto_svg.py       # Procedural standalone vector SVG Pareto chart generator
 │   ├── card_generator.py   # Model card generator with embedded SVG & benchmark tables
+│   ├── exporter.py         # Ollama Modelfile and InferOps runtime manifest generator
+│   ├── splitter.py         # GGUF model volume sharding and reassembly
+│   ├── html_report.py      # Standalone offline HTML benchmark report generator
 │   └── hf_hub.py           # Hugging Face Hub download & suite publisher
 ├── pipelines/
 │   ├── runner.py           # Multi-stage recipe orchestrator

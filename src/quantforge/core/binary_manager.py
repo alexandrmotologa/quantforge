@@ -41,6 +41,8 @@ class BinaryManager:
         "perplexity": ["llama-perplexity", "perplexity"],
         "bench": ["llama-bench"],
         "cli": ["llama-cli", "main"],
+        "lora": ["llama-export-lora", "export-lora"],
+        "split": ["llama-gguf-split", "gguf-split"],
     }
 
     def __init__(self, custom_dir: Optional[Path] = None) -> None:
